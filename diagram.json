@@ -9,11 +9,35 @@
       "top": -37.71,
       "left": -264.45,
       "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 100,
+      "left": 200,
+      "attrs": { "color": "red" }
+    },
+    { "type": "wokwi-resistor", "id": "r1", "top": 0, "left": 100, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "led1", "top": 0, "left": 200, "attrs": { "color": "yellow" } },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot1",
+      "top": 500,
+      "left": 200,
+      "attrs": {}
     }
   ],
   "connections": [
     [ "$serialMonitor:TX", "nucleo:PA3", "", [] ],
-    [ "$serialMonitor:RX", "nucleo:PA2", "", [] ]
+    [ "$serialMonitor:RX", "nucleo:PA2", "", [] ],
+    [ "nucleo:PA6", "btn1:1.a", "green", [] ],
+    [ "nucleo:GND", "btn1:2.b", "red",   [] ],
+    [ "nucleo:PA7", "r1:1", "green", [] ],
+    [ "r1:2",       "led1:A", "green", [] ],
+    [ "led1:C",     "nucleo:GND", "brown", [] ],
+    [ "pot1:VCC", "nucleo:3V3", "red",   [] ],
+    [ "pot1:GND", "nucleo:GND", "black", [] ],
+    [ "pot1:SIG", "nucleo:PA4", "green", [] ]
   ],
   "dependencies": {}
 }

@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 
 #include <string.h>
+#include <stdio.h> 
+#include "fsm.h"
 
 /* USER CODE END Includes */
 
@@ -42,8 +44,11 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
+
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
@@ -56,6 +61,8 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM3_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -95,20 +102,127 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_USART2_UART_Init();
+  MX_TIM3_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
-  char msg[] = "Hello, Wokwi!\r\n";
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-
+  char msg_init[] = "Hello, Wokwi!\r\n";
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg_init, strlen(msg_init), HAL_MAX_DELAY);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);  // adatta htim3/CHANNEL_2S al timer/canale scelto
+  // Inizializza il modulo FSM passando i puntatori alle periferiche
+  FSM_Init(&htim3, TIM_CHANNEL_2, &hadc1, &huart2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+/*     if (flag_pulsante_evento != 0)
+    {
+      // Salviamo l'evento locale e resettiamo subito il flag
+      uint8_t evento = flag_pulsante_evento;
+      flag_pulsante_evento = 0;
+
+      if (evento == 1) // EVENTO: PREMUTO (GND)
+      {
+        char msg[] = "Pulsante PREMUTO (GND)\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg) - 1, HAL_MAX_DELAY);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET); // Accende il LED
+      }
+      else if (evento == 2) // EVENTO: RILASCIATO (3.3V)
+      {
+        char msg[] = "Pulsante RILASCIATO (3.3V)\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg) - 1, HAL_MAX_DELAY);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET); // Spegne il LED
+      }
+    } */
+
+/*       if (flag_pulsante_evento != 0)
+      {
+        uint8_t evento = flag_pulsante_evento;
+        flag_pulsante_evento = 0; // Reset immediato del flag
+
+        // Stampa evento di risveglio
+        if (evento == 1) {
+          HAL_UART_Transmit(&huart2, (uint8_t*)"Pressione (Falling)\r\n", 21, 100);
+          switch (current_state) {
+            case STATE_MANUAL:
+                current_state = STATE_LINEAR;
+                break;
+            case STATE_LINEAR:
+                current_state = STATE_FREEZE;
+                break;
+            case STATE_FREEZE:
+                current_state = STATE_MANUAL;
+                break;
+          }
+        } else if (evento == 2) {
+          HAL_UART_Transmit(&huart2, (uint8_t*)"Rilascio (Rising)\r\n", 19, 100);
+        }
+      }
+      
+      if (current_state == STATE_MANUAL) {
+          // In modalità manuale, il duty cycle pilotato dal potenziometro
+          HAL_ADC_Start(&hadc1);
+          HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+          adc_value = HAL_ADC_GetValue(&hadc1);
+          HAL_ADC_Stop(&hadc1);
+
+          tensione = (adc_value * 3300) / 4095;  // 4095 = 2^12 - 1, risoluzione 12 bit
+
+          uint32_t volt = tensione / 1000;      // Volts
+          uint32_t decimali = tensione % 1000;  // Millivolts
+
+          duty = (adc_value * 999) / 4095;  // Mappa il valore ADC (0-4095) al duty cycle (0-999)
+
+          __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, duty);
+
+          // %03lu garantisce che se i decimali sono ad esempio 50mV, stampi "050" invece di "50"
+          sprintf(msg, "ADC: %lu  Tensione: %lu.%03lu V  Dutycycle: %lu\r\n", (uint32_t)adc_value, volt, decimali, (uint32_t)duty);
+
+          HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+          HAL_Delay(200);
+
+      } else if (current_state == STATE_LINEAR) {
+
+          // In modalità lineare, il duty cycle segue un andamento lineare crescente e decrescente 0-100% lineare
+          // Applica l'incremento/decremento in sicurezza
+          duty += direction * 10;
+
+          if (duty > 999) 
+          {
+              duty = 999;          // Clip al valore massimo esatto
+              direction = -1;      // Inizia a scendere
+          } 
+          else if (duty <= 0) 
+          {
+              duty = 0;            // Clip al valore minimo esatto
+              direction = 1;       // Inizia a salire
+          }
+
+          __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, duty);
+          // %03lu garantisce che se i decimali sono ad esempio 50mV, stampi "050" invece di "50"
+          sprintf(msg, "Dutycycle: %lu  direction: %d\r\n", (uint32_t)duty, direction);
+
+          HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+          HAL_Delay(10);
+
+      } else if (current_state == STATE_FREEZE) {
+
+          // In modalità freeze, il duty cycle rimane bloccato all'ultimo valore
+          __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, duty);
+          HAL_Delay(50);
+
+      } */
+      // L'intero loop è delegato alla FSM
+      FSM_Process();
+
+      
   }
   /* USER CODE END 3 */
 }
@@ -147,6 +261,65 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.LowPowerAutoPowerOff = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_79CYCLES_5;
+  hadc1.Init.SamplingTimeCommon2 = ADC_SAMPLETIME_1CYCLE_5;
+  hadc1.Init.OversamplingMode = DISABLE;
+  hadc1.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_HIGH;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLINGTIME_COMMON_1;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -194,6 +367,55 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 47;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 999;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
 
 }
 
@@ -251,7 +473,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Led_GPIO_Port, Led_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : User_Button_Pin */
   GPIO_InitStruct.Pin = User_Button_Pin;
@@ -259,12 +481,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(User_Button_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Led_Pin */
-  GPIO_InitStruct.Pin = Led_Pin;
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(Led_GPIO_Port, &GPIO_InitStruct);
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
@@ -275,6 +503,36 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* Callback dell'interrupt del pulsante */
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
+{
+
+  static uint32_t last_tick = 0;
+  
+  if (GPIO_Pin == GPIO_PIN_6)
+  {
+    // Debounce a tempo per evitare false attivazioni
+    if ((HAL_GetTick() - last_tick) > 200)
+    {
+      FSM_HandleButtonPress();
+      last_tick = HAL_GetTick();
+    }
+  }
+}
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+
+  static uint32_t last_tick = 0;
+
+  if (GPIO_Pin == GPIO_PIN_6)
+  {
+    if ((HAL_GetTick() - last_tick) > 50)
+    {
+      last_tick = HAL_GetTick();
+    }
+  }
+}
 
 /* USER CODE END 4 */
 
